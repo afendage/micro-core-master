@@ -15,6 +15,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.Assert;
 import org.springframework.util.ObjectUtils;
 
+import java.util.concurrent.TimeUnit;
+
 /**
  * @author finger
  */
@@ -23,7 +25,9 @@ public class StockServiceRedisImpl implements StockRedisService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(StockServiceRedisImpl.class);
 
-    // TODO 加上防悬挂逻辑
+    // 放悬挂 KEY
+    private final String TRY="TRY:";
+    private final String ROLLBACK="ROLLBACK:";
 
     @Autowired
     RedisUtil redisUtil;
@@ -33,6 +37,11 @@ public class StockServiceRedisImpl implements StockRedisService {
         String txId = context.getXid();
         LOGGER.info("TccActionOne prepare, txId:{}, count:{}",txId,stockEntity.getCount());
         Assert.isTrue(StringUtils.isNotBlank(txId), "事务开启失败");
+        // 防悬挂
+        Object obj= redisUtil.get(ROLLBACK+txId);
+        if(!ObjectUtils.isEmpty(obj)){
+            throw new RuntimeException("ROLLBACK 先执行了");
+        }
         //Redis 扣减库存
         Object value = redisUtil.get(stockEntity.getCommodityCode());
         if(ObjectUtils.isEmpty(value)){
@@ -40,6 +49,8 @@ public class StockServiceRedisImpl implements StockRedisService {
         }
         redisUtil.set(stockEntity.getCommodityCode(),(int) value - stockEntity.getCount());
         stockEntity.setTxId(txId);
+        // 防悬挂
+        redisUtil.setWithExpire(TRY+txId, "success", 1, TimeUnit.DAYS);
         return true;
     }
 
@@ -49,13 +60,19 @@ public class StockServiceRedisImpl implements StockRedisService {
         Assert.isTrue(context.getActionContext("stock") != null,"stock must not be null");
         LOGGER.info("TccActionOne commit, xid:{}, stock:{}" ,xid, context.getActionContext("stock"));
         ResultHolder.setActionOneResult(xid, "T");
+        // 提交成功可以清楚 放悬挂redis（可选）
+        //redisUtil.delete(TRY+xid);
+        //redisUtil.delete(ROLLBACK+xid);
         return true;
     }
 
     @Override
     public boolean rollback(BusinessActionContext context) {
-        String xid = context.getXid();
+        String txId = context.getXid();
         Assert.isTrue(context.getActionContext("stock") != null,"stock must not be null");
+        // 放悬挂：如果需要可以判断 try 阶段是否已经执行
+        // redisUtil.get(ROLLBACK+txId)
+
         //Redis 恢复库存
         Object obj= context.getActionContext("stock");
         if(!ObjectUtils.isEmpty(obj)){
@@ -63,9 +80,11 @@ public class StockServiceRedisImpl implements StockRedisService {
             StockEntity entity = gson.fromJson(obj.toString(), StockEntity.class);
             int result = (int) redisUtil.get(entity.getCommodityCode());
             redisUtil.set(entity.getCommodityCode(), result + entity.getCount());
-            LOGGER.error("TccActionOne rollback, xid:{}, stock:{}" ,xid, context.getActionContext("stock"));
-            ResultHolder.setActionOneResult(xid, "R");
+            LOGGER.error("TccActionOne rollback, xid:{}, stock:{}" ,txId, context.getActionContext("stock"));
+            ResultHolder.setActionOneResult(txId, "R");
         }
+        // 防悬挂
+        redisUtil.setWithExpire(ROLLBACK+txId, "success", 1,TimeUnit.DAYS);
         return true;
     }
 }
