@@ -1,0 +1,22 @@
+spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            logger-level : full
+            connect-timeout: 1000
+            read-timeout: 2000
+          service-products:
+            logger-level: full
+            connect-timeout: 3000
+            read-timeout: 5000
+    sentinel:
+      transport:
+        dashboard: localhost:8080
+      eager: true
+      #关闭URL入口的Context收敛功能，使Sentinel能够根据不同的URL路径进行独立的链路限流
+      web-context-unify: false
+feign:
+  sentinel:
+    enabled: true

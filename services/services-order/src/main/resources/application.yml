@@ -1,0 +1,39 @@
+spring:
+  application:
+    name: services-order
+  cloud:
+    nacos:
+      server-addr: 127.0.0.1:8848
+  profiles:
+    active: dev
+    #include是包含的意思，包含feign，feign就是下面新建的文件application-feign的-后面部分
+    include: feign
+server:
+  port: 8090
+---
+spring:
+  config:
+    import:
+      - nacos:common.properties?group=order
+      - nacos:database.properties?group=order
+      - nacos:services-products.yml
+    activate:
+      on-profile: dev
+---
+spring:
+  config:
+    import:
+      - nacos:common.properties?group=order
+      - nacos:database.properties?group=order
+      - nacos:haha.properties?group=order
+    activate:
+      on-profile: test
+---
+spring:
+  config:
+    import:
+      - nacos:common.properties?group=order
+      - nacos:database.properties?group=order
+      - nacos:haha.properties?group=order
+    activate:
+      on-profile: prod
